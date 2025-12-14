@@ -1,5 +1,5 @@
 ---
-title: FCM Push Notification Behavior - What the Docs Don't Tell You
+title: FCM Push Notification Loss on Android - Causes and Solutions
 date: 2025-12-14 10:00:00 +0900
 categories: [Dev, Firebase]
 tags: [fcm, push-notification, android, ios, troubleshooting]
@@ -94,9 +94,33 @@ After this change, all messages were delivered reliably regardless of Doze mode.
 
 ---
 
+## Potential Risks of High Priority (Reviewed)
+
+Before switching to high priority, I researched potential risks.
+
+### De-prioritization (Pattern-based)
+
+According to [Firebase documentation](https://firebase.google.com/docs/cloud-messaging/android-message-priority):
+
+> If FCM detects a pattern in which high priority messages don't result in user-facing notifications, your messages may be **de-prioritized**.
+
+| Condition | Result |
+|-----------|--------|
+| High priority → Shows notification ✅ | OK |
+| High priority → No notification ❌ | De-prioritized |
+
+- FCM analyzes **7 days of message behavior**
+- Once flagged, future messages continue to be downgraded
+
+**Our case:** We always show notifications → Not affected ✅
+
+---
+
 ## iOS Behavior (For Reference)
 
-iOS handles FCM differently:
+iOS handles FCM (APNs) with a completely different philosophy.
+
+### App State Behavior
 
 | App State | Behavior |
 |-----------|----------|
@@ -104,14 +128,33 @@ iOS handles FCM differently:
 | Background | System displays notification. App wakes briefly in background. |
 | Killed | System displays notification. |
 
-**Key differences from Android:**
-- **Silent notifications (data-only):** Apple requires low priority for battery conservation
-- **Offline:** APNs keeps only the **most recent notification** per app (newer replaces older)
-- **No Doze mode issue:** iOS handles power management differently
+### iOS Notification Policy by Type
+
+| Type | Priority | Limit | Delivery |
+|------|----------|-------|----------|
+| **Regular notification** (alert/sound/badge) | 10 (high) | No limit | Guaranteed |
+| **Silent notification** (data-only) | 5 (low) **required** | 2-3 per hour | Not guaranteed |
+
+> ⚠️ Using priority 10 for silent notifications will cause an error!
+{: .prompt-warning }
+
+### Android vs iOS: Different Approaches
+
+| | Android | iOS |
+|---|---------|-----|
+| **Main issue** | Doze mode blocks messages | Message type determines policy |
+| **Solution** | Use `high priority` | Use correct priority per type |
+| **data-only priority** | `high` recommended | `5` (low) **required** |
+
+### Why iOS had no push loss reports
+
+- No Doze mode → no priority-related message delays
+- Clear separation between regular and silent notifications
+- Less room for configuration mistakes
 
 Sources:
+- [Apple - Creating the Remote Notification Payload](https://developer.apple.com/library/archive/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/CreatingtheNotificationPayload.html)
 - [React Native Firebase - Cloud Messaging](https://rnfirebase.io/messaging/usage)
-- [Push Notification Delivery Deep Dive](https://blog.clix.so/how-push-notification-delivery-works-internally/)
 
 ---
 
@@ -131,3 +174,4 @@ The official docs say "high priority messages are delivered immediately" but don
 - [Set and manage Android message priority - Firebase](https://firebase.google.com/docs/cloud-messaging/android-message-priority)
 - [Optimize for Doze and App Standby - Android Developers](https://developer.android.com/training/monitoring-device-state/doze-standby)
 - [Receive messages in an Android app - Firebase](https://firebase.google.com/docs/cloud-messaging/android/receive)
+- [Apple - Creating the Remote Notification Payload](https://developer.apple.com/library/archive/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/CreatingtheNotificationPayload.html)
